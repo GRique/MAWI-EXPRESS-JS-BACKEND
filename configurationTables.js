@@ -193,4 +193,22 @@ async function insertShipper(connection, shipperData) {
     });
 }
 
-module.exports = { getSellers, getBuyers, getDeclarants, insertSeller, insertBuyer, insertDeclarant, getShippers, insertShipper };
+async function insertVessel(connection, vesselData) {
+    const { name, imoNumber } = vesselData;
+    const query = `
+        INSERT INTO vessel (name, imo_number)
+        VALUES (?, ?)
+    `;
+
+    return new Promise((resolve, reject) => {
+        connection.query(query, [name, imoNumber], (err, results) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(results);
+            }
+        });
+    });
+}
+
+module.exports = { getSellers, getBuyers, getDeclarants, insertSeller, insertBuyer, insertDeclarant, getShippers, insertShipper, insertVessel };

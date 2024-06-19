@@ -52,7 +52,8 @@ async function getPortsByCountry(connection, country) {
             id,
             name,
             country,
-            port_code AS portCode
+            port_code AS portCode,
+            asycuda_code AS asycudaCode
         FROM port
         WHERE country = ?
     `;
@@ -167,7 +168,35 @@ async function getSpecialExemptionsDeclarations(connection, importerId) {
     }
 }
 
+async function getAllNpcCodes(connection) {
+    const query = `
+        SELECT 
+            code,
+            description,
+            reference,
+            formC84Required
+        FROM npc_codes
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error fetching NPC codes:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
 
 
 
-module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations };
+
+module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes };

@@ -10,6 +10,45 @@ const noColumn = 525
 
 const sevenRow = 432
 
+function optimizeAddress(address, maxLineLength) {
+    const splitLines = address.split('\n');
+    let optimizedLines = [];
+    let currentLine = '';
+  
+    // First pass: Split lines that exceed maxLineLength
+    splitLines.forEach(line => {
+      const words = line.split(' ');
+      words.forEach(word => {
+        if ((currentLine.length + word.length + 1) > maxLineLength) {
+          optimizedLines.push(currentLine.trim());
+          currentLine = word + ' ';
+        } else {
+          currentLine += word + ' ';
+        }
+      });
+  
+      if (currentLine.trim().length > 0) {
+        optimizedLines.push(currentLine.trim());
+        currentLine = '';
+      }
+    });
+  
+    // Second pass: Merge consecutive lines if they fit within maxLineLength
+    let finalLines = [];
+    for (let i = 0; i < optimizedLines.length; i++) {
+      let line = optimizedLines[i];
+  
+      while (i < optimizedLines.length - 1 && (line.length + optimizedLines[i + 1].length + 1) <= maxLineLength) {
+        line += ' ' + optimizedLines[i + 1];
+        i++;
+      }
+  
+      finalLines.push(line);
+    }
+  
+    return finalLines.join('\n');
+}
+
 
 function displayNumber(data){
     return data && data !== "0.00" && data !== "0" ? `$${parseFloat(data).toLocaleString()}` : "NIL";
@@ -46,14 +85,22 @@ async function generateCustomsDeclaration(blankPDFPath, data, outputPath, callba
         console.log(data)
   
         // Define some content to overlay
-        firstPage.drawText(data.sellerNameAddress.replace(/\\n/g, "\n"), { x: 40, y: 720, size: 9, font: font, color: rgb(0, 0, 0), lineHeight: 13 });
-        firstPage.drawText(data.buyerNameAddress.replace(/\\n/g, "\n"), { x: 40, y: 660, size: 9,font: font, color: fontColor, lineHeight: 13 });
+        const buyerNameAddress = optimizeAddress(data.buyerNameAddress.replace(/\\n/g, "\n"), 50);
+        const sellerNameAddress = optimizeAddress(data.sellerNameAddress.replace(/\\n/g, "\n"), 50);
+        const declarantNameAddress = optimizeAddress(data.declarantNameAddress.replace(/\\n/g, "\n"), 50);
+        console.log("Origin", data.declarantNameAddress)
+        console.log("Origin", optimizeAddress(data.declarantNameAddress.replace(/\\n/g, "\n"), 50))
+        firstPage.drawText(sellerNameAddress, { x: 40, y: 720, size: 9, font: font, color: rgb(0, 0, 0), lineHeight: 13 });
+        firstPage.drawText(buyerNameAddress, { x: 40, y: 660, size: 9,font: font, color: fontColor, lineHeight: 13 });
         firstPage.drawText(data.declarantNameAddress.replace(/\\n/g, "\n"), { x: 40, y: 600, size: 9, font: font, color: fontColor, lineHeight: 13 });
         if(data.incoTerms.length > 28) {
             firstPage.drawText(data.incoTerms, { x: 430, y: 545, size: 7.5, font: font, color: fontColor });
         }
         else firstPage.drawText(data.incoTerms, { x: 430, y: 545, size: 8, color: fontColor });
-        firstPage.drawText(data.invoiceNumbersDates, { x: 320, y: 520, size: 9, font: font, color: fontColor, lineHeight: 10});
+        const numberOfLines = data.invoiceNumbersDates?.split('\n').length ?? 0;
+        if(numberOfLines > 3)
+            firstPage.drawText(data.invoiceNumbersDates, { x: 320, y: 522, size: 7.5, font: font, color: fontColor, lineHeight: 8});
+        else firstPage.drawText(data.invoiceNumbersDates, { x: 320, y: 520, size: 9, font: font, color: fontColor, lineHeight: 10});
         firstPage.drawText(data.numberAndDateofContract, { x: 310, y: 475, size: fontSizeSmall, color: fontColor });
         if(data.relatedParties !== undefined && data.relatedParties.length > 0) {
             if(data.relatedParties === "yes") {
@@ -244,6 +291,7 @@ async function generatePreSignedCustomsDeclaration(data, callback) {
         const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
         const firstPage = pdfDoc.addPage([612, 792]);
         console.log(data)
+        
   
         // Define some content to overlay
         firstPage.drawText(data.sellerNameAddress.replace(/\\n/g, "\n"), { x: 40, y: 720, size: 9, font: font, color: rgb(0, 0, 0), lineHeight: 13 });

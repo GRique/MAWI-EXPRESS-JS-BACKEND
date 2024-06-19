@@ -1,5 +1,24 @@
 # Use an official Node runtime as a parent image
-FROM node:14
+FROM node:20
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+  wget \
+  --no-install-recommends \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+
+# Install Chromium
+RUN apt-get update && apt-get install -y \
+  chromium \
+  --no-install-recommends \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
+# Set the Puppeteer environment variable to use the installed Chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Set the working directory in the container
 WORKDIR /usr/src/app

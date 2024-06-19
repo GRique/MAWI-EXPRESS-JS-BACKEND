@@ -5,6 +5,13 @@ const fontSize = 10;
 const fontSizeSmall = 8;
 const fontColor = rgb(0, 0, 0);
 
+function verifyString(data){
+  if(data === undefined || data === null || data === ''){
+      return ""
+  }
+  return data
+}
+
 function parseDateString(dateString) {
     // Split the date string by the slash character
     const parts = dateString.split('/');
@@ -43,7 +50,7 @@ async function createDepositForm(blankPDFPath, data, callback) {
         firstPage.drawText(data.regimeType, { x: 30, y: 675, size: 10,font: font, color: fontColor });
         firstPage.drawText(data.waybillNumber, { x: 80, y: 675, size: 10,font: font, color: fontColor });
         firstPage.drawText(data.waybillDate, { x: 200, y: 675, size: 10,font: font, color: fontColor });
-        firstPage.drawText(data.incoTerms, { x: 340, y: 675, size: 10,font: font, color: fontColor });
+        firstPage.drawText(verifyString(data.incoTerms), { x: 340, y: 675, size: 10,font: font, color: fontColor });
         firstPage.drawText(data.termsOfPayment, { x: 480, y: 675, size: 10,font: font, color: fontColor });
 
         firstPage.drawText(data.importer, { x: 25, y: 642, size: 10,font: font, color: fontColor });
