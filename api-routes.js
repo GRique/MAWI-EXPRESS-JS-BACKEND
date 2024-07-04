@@ -5,12 +5,12 @@ const fileUpload = require('express-fileupload');
 
 
 const { sanitizeInvoiceData } = require('./lib');
-const { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine  } = require('./dbfunctions'); // Importing database functions
+const { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists  } = require('./dbfunctions'); // Importing database functions
 const { insertCustomsDeclaration, fetchCustomsDeclarationByEntryId, updateCustomsDeclaration } = require('./c75_table_db_functions');
 const { generateCustomsDeclaration, generatePreSignedCustomsDeclaration } = require('./customsDocuments');
 const { getSellers, getBuyers, getDeclarants, insertSeller, insertBuyer, insertDeclarant, getShippers, insertShipper, insertVessel } = require('./configurationTables');
 
-const { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes } = require('./staticData');
+const { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate } = require('./staticData');
 
 const { createDepositForm } = require('./AutomatedDocuments/depositForm');
 
@@ -181,12 +181,12 @@ router.post('/commercial_invoices', async (req, res) => {
 
         const fileList = entryData.files;
 
-        const invoiceListWithFiles = invoiceList.map(invoice => {
-            const file = fileList.find(file => file.fileName === invoice.file_name);
-            return file ? { ...invoice, ...file } : invoice;
-        });
+        // const invoiceListWithFiles = invoiceList.map(invoice => {
+        //     const file = fileList.find(file => file.fileName === invoice.file_name);
+        //     return file ? { ...invoice, ...file } : invoice;
+        // });
 
-        console.log("Invoice List with Files", invoiceListWithFiles)
+        // console.log("Invoice List with Files", invoiceListWithFiles)
 
         const entryId = await insertEntry(connection, entryData);
 
@@ -198,7 +198,7 @@ router.post('/commercial_invoices', async (req, res) => {
 
         console.log("Waybill Data Inserted: ", waybillId)
         
-        for (const invoice of invoiceListWithFiles) {
+        for (const invoice of invoiceList) {
             await insertInvoiceLines(connection, invoice, entryId);
         }
 
@@ -257,6 +257,45 @@ router.get('/commercial-invoices/:entryId', async (req, res) => {
         console.error('Error fetching commercial invoices:', error);
         res.status(500).send('Error retrieving commercial invoices');
     }
+});
+
+router.get('/commercial-invoices-with-lines-with-vehicles/:entryId', async (req, res) => {
+    const { entryId } = req.params;
+  
+  try {
+    const connection = await getConnection();
+    console.log("Fetching Commercial Invoices with Lines")
+    const invoicesWithLines = await getCommercialInvoicesWithVehiclesByEntryId(entryId, connection);
+    if (invoicesWithLines.length > 0) {
+      // Process the result to group invoice lines under their respective invoices
+      const groupedInvoices = invoicesWithLines.reduce((acc, line) => {
+        // If the invoice hasn't been added to the accumulator, add it
+        if (!acc[line.invoice_id]) {
+          acc[line.invoice_id] = {
+            ...line,
+            lines: []
+          };
+        }
+        // Add the invoice line to the 'lines' array
+        acc[line.invoice_id].lines.push(line);
+        return acc;
+      }, {});
+      for (let key in groupedInvoices) {
+        if (groupedInvoices.hasOwnProperty(key)) {
+          let invoice = groupedInvoices[key];
+          invoice.invoice_date = moment(invoice.invoice_date).tz('UTC').format('YYYY-MM-DD');
+          invoice.new_date = moment(invoice.invoice_date).tz('UTC').format('YYYY-MM-DD');
+        }
+      }
+      // Send the grouped invoices as an array
+      res.json(Object.values(groupedInvoices));
+    } else {
+      res.status(404).send('No commercial invoices found for the given entry ID.');
+    }
+  } catch (error) {
+    console.error('Error fetching commercial invoices with lines:', error);
+    res.status(500).send('Error retrieving commercial invoices with lines');
+  }
 });
 
 router.get('/commercial-invoices-with-lines/:entryId', async (req, res) => {
@@ -651,10 +690,46 @@ router.get('/ports/:country', async (req, res) => {
         res.status(500).send('Error retrieving ports');
     }
 });
+router.get('/rates-of-exchange/:target_currency', async (req, res) => {
+    try {
+        const { target_currency } = req.params;  // Getting base currency from URL parameter
+        const connection = await getConnection(); // Ensure getConnection() is defined and returns a valid database connection
+        const rates = await getRatesOfExchange(target_currency, connection);
+        res.json(rates);
+    } catch (error) {
+        console.error('Error fetching rates of exchange:', error);
+        res.status(500).send('Error retrieving rates of exchange');
+    }
+});
+
+router.post('/rates-of-exchange', async (req, res) => {
+    try {
+        const connection = await getConnection();
+        const rateData = req.body;
+        const result = await insertRateOfExchange(connection, rateData);
+        res.status(201).json({ message: 'Rate of exchange added successfully', id: result.insertId });
+    } catch (error) {
+        console.error('Error adding rate of exchange:', error);
+        res.status(500).send('Failed to add rate of exchange');
+    }
+});
+
+router.get('/exchange-rates/:targetCurrency/:date', async (req, res) => {
+    const { targetCurrency, date } = req.params;
+    
+    try {
+        const connection = await getConnection();
+        const rates = await getRatesOfExchangeBasedOnShippedOnBoardDate(targetCurrency, date, connection);
+        res.json(rates);
+    } catch (error) {
+        console.error('Error fetching exchange rates:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 router.get('/vessels', async (req, res) => {
     try {
-        const connection = await getConnection(); // Ensure getConnection() is defined and returns a valid database connection
+        const connection = await getConnection();
         const vessels = await getAllVessels(connection);
         res.json(vessels);
     } catch (error) {
@@ -815,6 +890,41 @@ router.post('/upload-invoices', async(req, res) => {
         res.status(500).send('Error uploading file');
     }
 })
+
+router.delete('/invoice-lines', async (req, res) => {
+    try {
+        const connection = await getConnection();
+        const invoiceLineIds  = req.body;
+        console.log('Deleting Invoice line IDs:', invoiceLineIds)
+        deleteInvoiceLines(connection, invoiceLineIds).then((result) => {
+            res.status(200).json({ message: 'Invoice lines deleted successfully', affectedRows: result.affectedRows });
+        }).catch((error) => {
+            console.error('Error deleting invoice lines:', error);
+            res.status(500).send('Failed to delete invoice lines');
+        });
+        
+    } catch (error) {
+        console.error('Error deleting invoice lines:', error);
+        res.status(500).send('Failed to delete invoice lines');
+    }
+});
+
+router.get('/check-entry-number/:entryNumber', async (req, res) => {
+    const entryNumber = req.params.entryNumber;
+
+    try {
+        const connection = await getConnection();
+        const result = await checkEntryNumberExists(connection, entryNumber);
+
+        if (result.exists) {
+            res.status(409).json({ message: result.message });
+        } else {
+            res.status(200).json({ message: result.message });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'An error occurred', error: error.message });
+    }
+});
 
 
 module.exports = router;

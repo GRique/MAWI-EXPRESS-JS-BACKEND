@@ -152,8 +152,11 @@ async function insertEntry(connection, entry) {
         local_fee,
         country_last_provenance,
         trading_country,
-        entry_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        entry_type,
+        classification_status,
+        classification_approved,
+        classification_approved_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     return new Promise((resolve, reject) => {
@@ -181,7 +184,10 @@ async function insertEntry(connection, entry) {
                 entry.localFee,
                 entry.countryLastProvenance,
                 entry.tradingCountry,
-                entry.entryType
+                entry.entryType,
+                entry.classificationStatus,
+                entry.classificationApproved,
+                entry.classificationApprovedBy
             ],
             (err, results) => {
                 if (err) {
@@ -234,6 +240,9 @@ async function getEntriesWithDetails(connection) {
           ce.country_last_provenance,
           ce.trading_country,
           ce.entry_type,
+          ce.classification_status,
+          ce.classification_approved,
+          ce.classification_approved_by,
           w.waybill_number,
           w.waybill_date,
           w.mode_of_transport,
@@ -276,6 +285,36 @@ async function getEntriesWithDetails(connection) {
     }
 }
 
+async function checkEntryNumberExists(connection, entryNumber) {
+    const query = `
+        SELECT COUNT(*) AS count
+        FROM customs_entry
+        WHERE entry_number = ?
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, [entryNumber], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    const count = results[0].count;
+                    if (count > 0) {
+                        resolve({ exists: true, message: 'Entry number already exists' });
+                    } else {
+                        resolve({ exists: false, message: 'Entry number is available' });
+                    }
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error checking entry number:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
+
 async function getCommercialInvoicesByEntryId(entryId, connection) {
     try {
       const query = `
@@ -297,6 +336,72 @@ async function getCommercialInvoicesByEntryId(entryId, connection) {
     } finally {
       await connection.release();
     }
+}
+
+async function getCommercialInvoicesWithVehiclesByEntryId(entryId, connection) {
+    try {
+        const query = `
+          SELECT 
+                ci.invoice_id AS ci_invoice_id, 
+                ci.invoice_number, 
+                ci.invoice_date, 
+                ci.invoice_total, 
+                ci.sub_total, 
+                ci.supplier_name, 
+                ci.taxed_amount, 
+                ci.supplier_address, 
+                ci.purchase_order_number, 
+                ci.entry_id, 
+                ci.inland, 
+                ci.insurance, 
+                ci.other_charges,
+                cil.invoice_line_id AS cil_invoice_line_id,
+                cil.description, 
+                cil.quantity, 
+                cil.unit_price, 
+                cil.extension_price, 
+                cil.tariff_code, 
+                cil.product_code, 
+                cil.country_of_origin, 
+                cil.cpc_code, 
+                cil.npc_code,
+                v.id,
+                v.gross_weight, 
+                v.net_weight, 
+                v.curb_weight, 
+                v.fuel_type, 
+                v.seat_position, 
+                v.model_code, 
+                v.number_of_seats, 
+                v.number_of_doors, 
+                v.tyre_size, 
+                v.engine_displacement, 
+                v.chassis_number, 
+                v.engine_number, 
+                v.exterior_color, 
+                v.customer_name, 
+                v.broker_instructions, 
+                v.ed_number, 
+                v.manufacture_year
+            FROM commercial_invoice ci
+            LEFT JOIN commercial_invoice_line cil ON ci.invoice_id = cil.invoice_id
+            LEFT JOIN vehicle v ON cil.invoice_line_id = v.invoice_line_id
+          WHERE ci.entry_id = ?
+        `;
+        return new Promise((resolve, reject) => {
+          connection.query(query, [entryId], (err, results) => {
+              if (err) {
+              reject(err);
+              } else {
+              resolve(results);
+              }
+          });
+      });
+      } catch (error) {
+        throw error; // We throw the error to handle it in the route
+      } finally {
+        await connection.release();
+      }
 }
 
 async function getCommercialInvoicesWithLinesByEntryId(entryId, connection) {
@@ -384,7 +489,7 @@ async function updateCustomsEntry(connection, entryData, entry_id) {
             UPDATE customs_entry
             SET mawi_invoice = ?, entry_date = ?, invoice_total = ?, supplier_name = ?,
                 gross_weight = ?, net_weight = ?, entry_number = ?, freight_charge = ?, insurance_amount = ?, other_charges = ?,
-                rate_of_exchange = ?, consignee = ?, declarant = ?, incoterms = ?, regimeType = ?, deposit = ?, container_charges = ?, additional_charges = ?, local_fee = ?, country_last_provenance = ?, trading_country = ?
+                rate_of_exchange = ?, consignee = ?, declarant = ?, incoterms = ?, regimeType = ?, deposit = ?, container_charges = ?, additional_charges = ?, local_fee = ?, country_last_provenance = ?, trading_country = ?, classification_status = ?, classification_approved = ?, classification_approved_by = ?
             WHERE entry_id = ?
             `;
             const params = [
@@ -409,6 +514,9 @@ async function updateCustomsEntry(connection, entryData, entry_id) {
                 entryData.local_fee,
                 entryData.country_last_provenance,
                 entryData.trading_country,
+                entryData.classification_status,
+                entryData.classification_approved,
+                entryData.classification_approved_by,
                 entry_id
             ];
 
@@ -465,8 +573,8 @@ async function updateCommercialInvoice(connection, invoiceId, invoiceData) {
 }
 
 function updateCommercialInvoiceLine(connection, invoiceLineId, lineData) {
-    // console.log("Updating Invoice Line ID: ", lineData.invoice_line_id)
-    // console.log(lineData)
+    console.log("Updating Invoice Line ID: ", lineData.invoice_line_id)
+    console.log(lineData)
     const query = `
         UPDATE commercial_invoice_line
         SET description = ?, quantity = ?, unit_price = ?, extension_price = ?, tariff_code = ?, product_code = ?, country_of_origin = ?, cpc_code = ?, npc_code = ?, vat_applicable = ?
@@ -497,4 +605,30 @@ function updateCommercialInvoiceLine(connection, invoiceLineId, lineData) {
     });
 }
 
-module.exports = { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine };
+async function deleteInvoiceLines(connection, invoiceLineIds) {
+    console.log("DB Functions Deleting Invoice Lines: ", invoiceLineIds)
+    try {
+        const query = `
+        DELETE FROM commercial_invoice_line
+        WHERE invoice_line_id IN (?)
+        `;
+
+        return new Promise((resolve, reject) => {
+            connection.query(query, [invoiceLineIds], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    }
+    catch (error) {
+        throw error;
+    }
+    finally {
+        await connection.release();
+    }
+}
+
+module.exports = { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists };

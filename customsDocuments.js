@@ -161,6 +161,8 @@ async function generateCustomsDeclaration(blankPDFPath, data, outputPath, callba
 
         firstPage.drawText(data.signatory_phone_number, { x: 375, y: 57, size: fontSize, font: font, color: fontColor });
 
+        firstPage.drawText(data.referenceNumber, { x: 30, y: 38, size: fontSize, font: font, color: fontColor });
+
 
         /*PAGE 2 */
 
@@ -252,6 +254,8 @@ async function generateCustomsDeclaration(blankPDFPath, data, outputPath, callba
 
         secondPage.drawText(`$${parseFloat(data.net_invoice_price).toLocaleString()}`, { x: 450, y: 90, size: fontSize, font: font, color: fontColor });
         secondPage.drawText(`${data.exchange_rate}`, { x: 510, y: 90, size: fontSize, font: font, color: fontColor });
+
+        secondPage.drawText(data.referenceNumber, { x: 505, y: 25, size: fontSize, font: font, color: fontColor });
 
         pdfDoc.save().then(pdfBytesOut => {
             // console.log(`PDF file generated successfully.`);

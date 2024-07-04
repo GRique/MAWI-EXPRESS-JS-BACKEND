@@ -111,6 +111,9 @@ async function generateValuationForm(data, callback) {
       firstPage.drawText(data.signatory_phone_number, { x: 380, y: 37, size: fontSize, font: font, color: fontColor });
 
 
+      firstPage.drawText(data.referenceNumber, { x: 35, y: 18, size: fontSize, font: font, color: fontColor });
+
+
       /*PAGE 2 */
 
       const secondPage = pdfDoc.addPage([612, 792]);
@@ -203,6 +206,8 @@ async function generateValuationForm(data, callback) {
 
       secondPage.drawText(`$${parseFloat(data.net_invoice_price).toLocaleString()}`, { x: 465, y: 65, size: fontSize, font: font, color: fontColor });
       secondPage.drawText(`${data.exchange_rate}`, { x: 525, y: 65, size: fontSize, font: font, color: fontColor });
+
+      secondPage.drawText(data.referenceNumber, { x: 520, y: 5, size: fontSize, font: font, color: fontColor });
 
       pdfDoc.save().then(pdfBytesOut => {
           // console.log(`PDF file generated successfully.`);

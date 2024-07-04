@@ -40,7 +40,7 @@ function formatCpcCodes(data) {
             });
         }
         
-        regimeTypeMap.get(regimeTypeKey).cpcCodes.push({ code, name, cpcId });
+        regimeTypeMap.get(regimeTypeKey).cpcCodes.push({ code, name, cpcId, cpcDisplay: `${code} - ${name}`});
     });
 
     return Array.from(regimeTypeMap.values());
@@ -174,8 +174,10 @@ async function getAllNpcCodes(connection) {
             code,
             description,
             reference,
-            formC84Required
-        FROM npc_codes
+            formC84Required,
+            CONCAT(code, ' - ', description) AS code_description
+        FROM 
+            npc_codes;
     `;
 
     try {
@@ -196,7 +198,96 @@ async function getAllNpcCodes(connection) {
     }
 }
 
+async function getRatesOfExchange(targetCurrency, connection) {
+    const query = `
+        SELECT *
+        FROM 
+            rate_of_exchange
+        WHERE 
+            target_currency = ?
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, [targetCurrency], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    }
+    catch (error) {
+        console.error('Error fetching exchange rates:', error);
+        throw error;
+    } finally{
+        await connection.release();
+    
+    }
+}
+
+async function insertRateOfExchange(connection, rateOfExchange) {
+    const query = `
+        INSERT INTO rate_of_exchange
+        (base_currency, target_currency, rate, last_updated)
+        VALUES
+        (?, ?, ?, ?)
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, [rateOfExchange.baseCurrency, rateOfExchange.targetCurrency, rateOfExchange.rate, rateOfExchange.lastUpdated], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    }
+    catch (error) {
+        console.error('Error inserting exchange rate:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+
+}
+
+async function getRatesOfExchangeBasedOnShippedOnBoardDate(targetCurrency, shippedOnBoardDate, connection) {
+    const query = `
+        SELECT roe.*
+        FROM rate_of_exchange roe
+        INNER JOIN (
+            SELECT base_currency, MAX(last_updated) AS max_date
+            FROM rate_of_exchange
+            WHERE last_updated < ? AND target_currency = ?
+            GROUP BY base_currency
+        ) subquery
+        ON roe.base_currency = subquery.base_currency AND roe.last_updated = subquery.max_date
+        WHERE roe.target_currency = ?;
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, [shippedOnBoardDate, targetCurrency, targetCurrency], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error fetching exchange rates:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
 
 
 
-module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes };
+
+module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate };

@@ -61,8 +61,8 @@ async function overlayText(page, data, pdfDoc) {
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontColor = rgb(0, 0, 0); // Black color
   
-    page.drawText(verifyString(data.declarationNumber), { x: 200, y: 720, size: 10, font: font, color: fontColor });
-    page.drawText(verifyString(data.declarationDate), { x: 270, y: 720, size: 10, font: font, color: fontColor });
+    // page.drawText(verifyString(data.declarationNumber), { x: 200, y: 720, size: 10, font: font, color: fontColor });
+    // page.drawText(verifyString(data.declarationDate), { x: 270, y: 720, size: 10, font: font, color: fontColor });
     page.drawText(verifyString(data.regimeCode), { x: 545, y: 720, size: 10, font: font, color: fontColor });
   
     page.drawText(verifyString(data.declarantName), { x: 145, y: 695, size: 10, font: font, color: fontColor });
@@ -74,7 +74,7 @@ async function overlayText(page, data, pdfDoc) {
   
     page.drawText(verifyString(data.declarationContent), { x: 95, y: 615, size: 8, color: fontColor, lineHeight: 11 });
   
-    page.drawText(verifyString(data.CPCCode), { x: 50, y: 600, size: 10, font: font, color: fontColor });
+    page.drawText(`C${verifyString(data.CPCCode)}`, { x: 50, y: 600, size: 10, font: font, color: fontColor });
     page.drawText(verifyString(data.extensionCode), { x: 50, y: 585, size: 10, font: font, color: fontColor });
   
     page.drawText(verifyString(data.signatoryName), { x: 95, y: 505, size: 8, color: fontColor });
