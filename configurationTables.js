@@ -158,14 +158,14 @@ async function insertBuyer(connection, buyerData) {
 
 // Function to insert a declarant into the database
 async function insertDeclarant(connection, declarantData) {
-    const { name, address, country, phoneContact, emailAddress, status } = declarantData;
+    const { name, address, country, phoneContact, emailAddress, status, importerId } = declarantData;
     const query = `
-        INSERT INTO declarant (name, address, country, phone_contact, email_address, status)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO declarant (name, address, country, phone_contact, email_address, status, importer)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
 
     return new Promise((resolve, reject) => {
-        connection.query(query, [name, address, country, phoneContact, emailAddress, status], (err, results) => {
+        connection.query(query, [name, address, country, phoneContact, emailAddress, status, importerId], (err, results) => {
             if (err) {
                 reject(err);
             } else {

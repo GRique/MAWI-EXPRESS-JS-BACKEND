@@ -6,7 +6,8 @@ function sanitizeInvoiceData(invoiceList){
         if(!invoice.hasOwnProperty('subtotal') || invoice.subtotal === null || invoice.subtotal === undefined || isNaN(invoice.subtotal)){
             invoice['subtotal'] = 0.0;
         }
-        invoiceList.invoice_items = sanitizeInvoiceLine(invoice.invoice_items);
+        console.log(invoice);
+        invoiceList.lines = sanitizeInvoiceLine(invoice.lines);
     });
     return invoiceList;
 }

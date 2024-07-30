@@ -11,7 +11,12 @@ async function uploadFilesToAzure(files) {
       let blobName = `${Date.now()}_${file.name}`;
       console.log(`Uploading file: ${blobName}`);
       let blockBlobClient = containerClient.getBlockBlobClient(blobName);
-      await blockBlobClient.uploadData(file.data);
+      const options = {
+        blobHTTPHeaders: {
+            blobContentType: file.mimetype // Set the content type
+        }
+      };
+      await blockBlobClient.uploadData(file.data, options);
       let fileUrl = blockBlobClient.url;
       console.log(`File uploaded: ${fileUrl}`);
       return { fileName: file.name, fileUrl };

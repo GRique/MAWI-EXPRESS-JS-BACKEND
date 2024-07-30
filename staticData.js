@@ -1,27 +1,36 @@
 async function getCpcCodesAndRegimeTypes(connection, country) {
-    const query = `
-        SELECT 
-            rt.id AS regimeTypeId,
-            rt.code AS regimeTypeCode,
-            rt.name AS regimeTypeName,
-            rt.country AS country,
-            cpc.code AS code,
-            cpc.name AS name,
-            cpc.id AS cpcId
-        FROM regime_type AS rt
-        JOIN cpc_code AS cpc ON rt.id = cpc.regime_type
-        WHERE rt.country = ?
-    `;
+    try{
+        const query = `
+            SELECT 
+                rt.id AS regimeTypeId,
+                rt.code AS regimeTypeCode,
+                rt.name AS regimeTypeName,
+                rt.country AS country,
+                cpc.code AS code,
+                cpc.name AS name,
+                cpc.id AS cpcId
+            FROM regime_type AS rt
+            JOIN cpc_code AS cpc ON rt.id = cpc.regime_type
+            WHERE rt.country = ?
+        `;
 
-    return new Promise((resolve, reject) => {
-        connection.query(query, [country], (err, results) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(results);
-            }
+        return new Promise((resolve, reject) => {
+            connection.query(query, [country], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
         });
-    });
+    }
+    catch (error) {
+        console.error('Error fetching entries with details:', error);
+        throw error;
+    }
+    finally {
+        await connection.release();
+    }
 }
 
 function formatCpcCodes(data) {
@@ -198,6 +207,37 @@ async function getAllNpcCodes(connection) {
     }
 }
 
+async function getAllNpcCodesWithCPC(connection) {
+    const query = `
+        SELECT 
+            npc.code AS code,
+            npc.description AS description,
+            CONCAT(npc.code, ' - ', npc.description) AS code_description,
+            cpc.id AS cpcId
+        FROM npc_codes AS npc
+        JOIN cpc_npc_relation AS cnr ON npc.code = cnr.npc_code
+        JOIN cpc_code AS cpc ON cnr.cpc_code_id = cpc.id
+        ORDER BY npc.code, cpc.code;
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error fetching NPC codes:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
+
 async function getRatesOfExchange(targetCurrency, connection) {
     const query = `
         SELECT *
@@ -262,7 +302,7 @@ async function getRatesOfExchangeBasedOnShippedOnBoardDate(targetCurrency, shipp
         INNER JOIN (
             SELECT base_currency, MAX(last_updated) AS max_date
             FROM rate_of_exchange
-            WHERE last_updated < ? AND target_currency = ?
+            WHERE last_updated <= ? AND target_currency = ?
             GROUP BY base_currency
         ) subquery
         ON roe.base_currency = subquery.base_currency AND roe.last_updated = subquery.max_date
@@ -287,7 +327,35 @@ async function getRatesOfExchangeBasedOnShippedOnBoardDate(targetCurrency, shipp
     }
 }
 
+async function getAllTradeAgreements(connection) {
+    const query = `
+        SELECT 
+            id,
+            code,
+            name
+        FROM 
+            trade_agreements;
+    `;
+
+    try {
+        return new Promise((resolve, reject) => {
+            connection.query(query, (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error fetching trade agreements:', error);
+        throw error;
+    } finally {
+        await connection.release();
+    }
+} 
 
 
 
-module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate };
+
+module.exports = { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getAllNpcCodesWithCPC, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate, getAllTradeAgreements };

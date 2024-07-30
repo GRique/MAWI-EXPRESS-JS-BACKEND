@@ -3,20 +3,26 @@ const mysql = require('mysql');
 const cors = require('cors');
 const fileUpload = require('express-fileupload');
 
+const bodyParser = require('body-parser');
+
 
 const { sanitizeInvoiceData } = require('./lib');
-const { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists  } = require('./dbfunctions'); // Importing database functions
+const { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists, getEntriesWithDetailsNotFullyStored, insertInvoiceLine, updateCommercialInvoiceLinesOptimized, updateMultipleCommercialInvoices, insertInvoiceLinesWithPerformanceMetrics, updatePerformanceMetrics  } = require('./dbfunctions'); // Importing database functions
 const { insertCustomsDeclaration, fetchCustomsDeclarationByEntryId, updateCustomsDeclaration } = require('./c75_table_db_functions');
 const { generateCustomsDeclaration, generatePreSignedCustomsDeclaration } = require('./customsDocuments');
 const { getSellers, getBuyers, getDeclarants, insertSeller, insertBuyer, insertDeclarant, getShippers, insertShipper, insertVessel } = require('./configurationTables');
 
-const { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate } = require('./staticData');
+const { getCpcCodesAndRegimeTypes, formatCpcCodes, getPortsByCountry, getAllVessels, getCustomsEntryDeclarants, getSpecialExemptionsDeclarations, getAllNpcCodes, getAllNpcCodesWithCPC, getRatesOfExchange, insertRateOfExchange, getRatesOfExchangeBasedOnShippedOnBoardDate, getAllTradeAgreements } = require('./staticData');
 
 const { createDepositForm } = require('./AutomatedDocuments/depositForm');
+
+const { mergePDFs } = require('./AutomatedDocuments/merge-pdf');
 
 const { createTTC84 } = require('./AutomatedDocuments/tt_c84');
 
 const { createOvertimeForm } = require('./AutomatedDocuments/overtime');
+
+const { generateScoonerBL } = require('./AutomatedDocuments/scooner-bl');
 
 const { generateValuationForm } = require('./AutomatedDocuments/valuationFormupdate');
 
@@ -24,13 +30,29 @@ const { generateCaricomHTML } = require('./AutomatedDocuments/caricom');
 
 const { uploadFilesToAzure } = require('./Azure-Storage/azure-storage-api');
 
+const { insertInvoicePerformanceMetric, insertClassificationPerformanceMetric } = require('./PerformanceMetrics/invoice_ai_performance');
+
+const { insertPerformanceMetrics } = require('./PerformanceMetrics/classification_accuracy');
+
 const puppeteer = require('puppeteer');
 
 const moment = require('moment-timezone');
 
 
 
+
+
 const router = express.Router();
+
+router.use(express.json({ limit: '100mb' }));
+
+router.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+router.use(fileUpload({
+    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB
+}));
+
+
 
 const pool = mysql.createPool({
     connectionLimit: 10, // Example limit, adjust as necessary
@@ -38,6 +60,29 @@ const pool = mysql.createPool({
     user: 'mysqladmin@rampslogistics-mysqldbserver',
     password: 'Ramps101*',
     database: 'mawi'
+});
+
+router.get('/hello', (req, res) => {
+    res.send('Hello MAWI');
+});
+
+router.get('/pool-status', async (req, res) => {
+    let connection;
+    try{
+        connection = await getConnection();
+        connection.release(); // Release the connection back to the pool
+
+        res.json({
+            connections: {
+              acquired: pool._allConnections.length,
+              available: pool._freeConnections.length,
+              queue: pool._connectionQueue.length
+            }
+        });
+    }
+    catch(err){
+        console.error('Error:', err);
+    }
 });
 
 // Waybill CRUD operations
@@ -132,8 +177,10 @@ router.get('/commercial_invoices', async (req, res) => {
 
 
 router.post('/commercial_invoices_vehicles', async (req, res) => {
+
+    let connection;
     try {
-        const connection = await getConnection();
+        connection = await getConnection();
         await beginTransaction(connection);
 
         console.log("Inserting Commercial Invoice, Entry and Waybill Data")
@@ -156,20 +203,25 @@ router.post('/commercial_invoices_vehicles', async (req, res) => {
         }
 
         await commitTransaction(connection);
-        connection.release();
+        // connection.release();
 
         res.send({ entryId: entryId, message: ''});
     } catch (err) {
         console.error('Error:', err);
         res.status(500).send('An error occurred while processing the request.');
+    }finally{
+        if(connection){
+            connection.release();
+        }
     }
 })
 
 
 
 router.post('/commercial_invoices', async (req, res) => {
+    const connection = await getConnection();
     try {
-        const connection = await getConnection();
+        
         await beginTransaction(connection);
 
         console.log("Inserting Commercial Invoice, Entry and Waybill Data")
@@ -179,14 +231,17 @@ router.post('/commercial_invoices', async (req, res) => {
 
         const invoiceList = sanitizeInvoiceData(entryData.invoiceList);
 
+        
+
         const fileList = entryData.files;
 
-        // const invoiceListWithFiles = invoiceList.map(invoice => {
-        //     const file = fileList.find(file => file.fileName === invoice.file_name);
-        //     return file ? { ...invoice, ...file } : invoice;
-        // });
+        const invoiceListWithFiles = invoiceList.map(invoice => {
+            const file = (fileList || []).find(file => file.fileName === invoice.file_name);
+            return file ? { ...invoice, ...file } : invoice;
+        });
 
-        // console.log("Invoice List with Files", invoiceListWithFiles)
+        console.log("Invoice List with Files", invoiceListWithFiles)
+
 
         const entryId = await insertEntry(connection, entryData);
 
@@ -198,18 +253,51 @@ router.post('/commercial_invoices', async (req, res) => {
 
         console.log("Waybill Data Inserted: ", waybillId)
         
-        for (const invoice of invoiceList) {
-            await insertInvoiceLines(connection, invoice, entryId);
+        for (const invoice of invoiceListWithFiles) {
+            // await insertInvoiceLines(connection, invoice, entryId);
+            await insertInvoiceLinesWithPerformanceMetrics(connection, invoice, entryId);
         }
 
         await commitTransaction(connection);
-        connection.release();
+        // connection.release();
 
         res.send({ entryId: entryId, message: 'All invoices and invoice lines added successfully.' });
         // res.send('All invoices and invoice lines added successfully.');
     } catch (err) {
+        console.error('Saving Error:', err);
+        res.status(500).send('An error occurred while processing the request.');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
+    }
+});
+
+router.post('/invoice-lines', async (req, res) => {
+    try {
+        const connection = await getConnection();
+        await beginTransaction(connection);
+
+        const invoiceLineData = req.body;
+        console.log(invoiceLineData)
+
+        for (const line of invoiceLineData) {
+            await insertInvoiceLine(connection, line, line.invoice_id);
+        }
+
+        await commitTransaction(connection);
+        // connection.release();
+
+        res.send('All invoices and invoice lines added successfully.');
+    } catch (err) {
         console.error('Error:', err);
         res.status(500).send('An error occurred while processing the request.');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
     }
 });
 
@@ -231,10 +319,22 @@ router.post('/commercial_invoice_lines', async (req, res) => {
         });
     });
 
-router.get('/entries', async (req, res) => {
+router.get('/entries/:entryStatus', async (req, res) => {
+    try {
+        const { entryStatus } = req.params;
+        const connection = await getConnection();
+        const entries = await getEntriesWithDetails(connection, entryStatus);
+        res.json(entries);
+    } catch (error) {
+        console.error('Error in GET /entries:', error);
+        res.status(500).send('Error retrieving entries');
+    }
+});
+
+router.get('/entries-not-fully-stored', async (req, res) => {
     try {
         const connection = await getConnection();
-        const entries = await getEntriesWithDetails(connection);
+        const entries = await getEntriesWithDetailsNotFullyStored(connection);
         res.json(entries);
     } catch (error) {
         console.error('Error in GET /entries:', error);
@@ -396,28 +496,85 @@ router.put('/customs-entry/:entryId', async (req, res) => {
     const { invoiceId } = req.params;
     const { invoiceData, invoiceLines } = req.body;
 
-    // console.log('Invoice data:', invoiceData);
-    // console.log('Invoice lines:', invoiceLines);
-  
+    const connection = await getConnection();
+    await connection.beginTransaction();
+
     try {
-        const connection = await getConnection();
-      // Update the invoice
-      const invoicePromise = updateCommercialInvoice(connection, invoiceId, invoiceData);
-      
-      // Update the invoice lines
-      const invoiceLinesPromises = invoiceLines.map(line =>
-        updateCommercialInvoiceLine(connection, line.invoice_line_id, line)
-      );
-  
-      // Using Promise.all to execute the invoice update and all invoice lines updates
-      await Promise.all([invoicePromise, ...invoiceLinesPromises]);
-  
-      res.send('Invoice and invoice lines updated successfully.');
+        
+
+        const invoicePromise = updateCommercialInvoice(connection, invoiceId, invoiceData);
+        // console.log("Updating Invoice Lines: ", invoiceLines)
+        const invoiceLinesPromise = updateCommercialInvoiceLinesOptimized(connection, invoiceLines);
+
+        await Promise.all([invoicePromise, invoiceLinesPromise]);
+
+        await connection.commit();
+        res.send('Invoice and invoice lines updated successfully.');
     } catch (error) {
-      console.error('Error updating invoice and invoice lines:', error);
-      res.status(500).send('Error updating invoice and invoice lines');
+        console.error('Error updating invoice and invoice lines:', error);
+        if (connection) {
+            await connection.rollback();
+        }
+        res.status(500).send('Error updating invoice and invoice lines');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
     }
   });
+
+router.put('/update-multiple-invoices', async (req, res) => {
+    const { invoices } = req.body;
+
+    const connection = await getConnection();
+    await connection.beginTransaction();
+
+    try {
+        console.log("Updating Multiple Commercial Invoices Routes: ", invoices)
+        await updateMultipleCommercialInvoices(connection, invoices);
+
+        await connection.commit();
+        res.send('Invoices updated successfully.');
+    } catch (error) {
+        console.error('Error updating invoices:', error);
+        if (connection) {
+            await connection.rollback();
+        }
+        res.status(500).send('Error updating invoices');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
+    }
+});
+
+router.put('/update-multiple-invoice-lines', async (req, res) => {
+    const { invoiceLines } = req.body;
+
+    const connection = await getConnection();
+    await connection.beginTransaction();
+
+
+    try {
+        await updateCommercialInvoiceLinesOptimized(connection, invoiceLines);
+
+        await connection.commit();
+        res.send('Invoice lines updated successfully.');
+    } catch (error) {
+        console.error('Error updating invoice lines:', error);
+        if (connection) {
+            await connection.rollback();
+        }
+        res.status(500).send('Error updating invoice lines');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
+    }
+});
 
 router.post('/generate-customs-declaration', async (req, res) => {
     const blankPDFPath = 'blank-customs-declaration - read-only.pdf'; // Update with the path to your blank PDF
@@ -679,6 +836,17 @@ router.get('/npc_codes', async (req, res) => {
     }
 });
 
+router.get('/npc_codes_with_cpc', async (req, res) => {
+    try {
+        const connection = await getConnection(); // Ensure getConnection() is defined and returns a valid database connection
+        const npcCodes = await getAllNpcCodesWithCPC(connection);
+        res.json(npcCodes);
+    } catch (error) {
+        console.error('Error fetching NPC codes:', error);
+        res.status(500).send('Error retrieving NPC codes');
+    }
+});
+
 router.get('/ports/:country', async (req, res) => {
     try {
         const { country } = req.params;  // Getting country from URL parameter
@@ -706,6 +874,7 @@ router.post('/rates-of-exchange', async (req, res) => {
     try {
         const connection = await getConnection();
         const rateData = req.body;
+        rateData.lastUpdated = moment(rateData.lastUpdated).tz('UTC').format('YYYY-MM-DD');
         const result = await insertRateOfExchange(connection, rateData);
         res.status(201).json({ message: 'Rate of exchange added successfully', id: result.insertId });
     } catch (error) {
@@ -812,11 +981,46 @@ router.post('/deposit-form', (req, res) => {
     });
 });
 
-router.post('/overtime-form', (req, res) => {
-    const filePath = 'AutomatedDocuments/overtime-blank.pdf'; // Update with the path to your overtime form PDF
+router.post('/generate-sconner-bl', (req, res) => {
+    const filePath = 'AutomatedDocuments/Scooner-BL-Blank.pdf'; // Update with the path to your SCONNER BL form PDF
     console.log(req.body)
 
-    createOvertimeForm(filePath, req.body, (err, pdfBytes) => {
+    generateScoonerBL(filePath, req.body, (err, pdfBytes) => {
+        if (err) {
+            console.error('Error generating PDF:', err);
+            return res.status(500).send('Error generating PDF');
+        }
+        console.log('PDF generated successfully');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.send(Buffer.from(pdfBytes));
+    });
+});
+
+router.post('/merge-pdfs', (req, res) => {
+    const { pdfUrls } = req.body;
+  
+    if (!pdfUrls || !Array.isArray(pdfUrls)) {
+      return res.status(400).send('Invalid input. Please provide an array of PDF URLs.');
+    }
+  
+    mergePDFs(pdfUrls, (error, mergedPdfBytes) => {
+      if (error) {
+        console.error('Error merging PDFs:', error);
+        return res.status(500).send('An error occurred while merging PDFs.');
+      }
+  
+      // Send the merged PDF as a response
+      res.setHeader('Content-Type', 'application/pdf');
+      res.send(Buffer.from(mergedPdfBytes));
+    });
+  });
+
+router.post('/overtime-form', (req, res) => {
+    const filePath = 'AutomatedDocuments/overtime-blank.pdf'; // Update with the path to your overtime form PDF
+    const secondPagePath = 'AutomatedDocuments/overtime-second-page.pdf'; // Update with the path to your second page of the overtime form PDF
+    console.log(req.body)
+
+    createOvertimeForm(filePath, secondPagePath, req.body, (err, pdfBytes) => {
         if (err) {
             console.error('Error generating PDF:', err);
             return res.status(500).send('Error generating PDF');
@@ -879,6 +1083,14 @@ router.post('/upload-invoices', async(req, res) => {
         files = [files];
     }
     console.log(files.length, 'files uploaded');
+    const maxSize = 100 * 1024 * 1024; // 10 MB
+    for (let file of files) {
+        console.log(`Uploaded file size: ${file.size} bytes`);
+
+        if (file.size > maxSize) {
+            return res.status(413).send('One or more files are too large.');
+        }
+    }
 
     try {
         const fileResponse = await uploadFilesToAzure(files);
@@ -923,6 +1135,129 @@ router.get('/check-entry-number/:entryNumber', async (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ message: 'An error occurred', error: error.message });
+    }
+});
+
+router.get('/trade_agreements', async (req, res) => {
+    try {
+        const connection = await getConnection(); // Ensure getConnection() is defined and returns a valid database connection
+        const tradeAgreements = await getAllTradeAgreements(connection);
+        res.json(tradeAgreements);
+    } catch (error) {
+        console.error('Error fetching trade agreements:', error);
+        res.status(500).send('Error retrieving trade agreements');
+    }
+});
+
+router.post('/invoice-ai-performance', async (req, res) => {
+    const { file, entryId, processing_start, processing_end, processing_time, number_of_lines, number_of_invoices, status, error_message, model_utlized } = req.body;
+
+    const metric = {
+        file_size: file.size,
+        processing_start: processing_start,
+        processing_end: processing_end,
+        processing_time: processing_time,
+        number_of_lines: number_of_lines,
+        number_of_invoices: number_of_invoices,
+        status: status || 'N/A',
+        error_message: error_message || '',
+        model_utlized: model_utlized || ''
+    };
+    console.log('Invoice AI Performance Metric:', metric);
+    console.log('Entry ID:', entryId);
+
+    let connection;
+
+    try {
+        connection = await getConnection();
+        await insertInvoicePerformanceMetric(connection, metric, entryId);
+        res.status(200).send('Metrics recorded successfully');
+    } catch (error) {
+        res.status(500).send('Failed to record metrics');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
+    }
+});
+
+router.post('/classification-performance', async (req, res) => {
+    const { processing_start, processing_end, processing_time, number_of_lines, number_of_invoices, entry_id } = req.body;
+
+    const metric = {
+        processing_start: processing_start,
+        processing_end: processing_end,
+        processing_time: processing_time,
+        number_of_lines: number_of_lines,
+        number_of_invoices: number_of_invoices,
+        entry_id: entry_id
+    };
+    console.log('Classification Performance Metric:', metric);
+    let connection;
+
+    try {
+        connection = await getConnection();
+        await insertClassificationPerformanceMetric(connection, metric);
+        res.status(200).send('Metrics recorded successfully');
+    } catch (error) {
+        console.error('Error recording metrics:', error);
+        res.status(500).send('Failed to record metrics');
+    }
+    finally{
+        if(connection){
+            connection.release();
+        }
+    }
+});
+
+router.post('/classification-accuracy-performance-metrics', async (req, res) => {
+    const metrics = req.body.metrics;
+
+    if (!metrics || !Array.isArray(metrics)) {
+        return res.status(400).send('Invalid metrics data');
+    }
+
+    const connection = await getConnection();
+    await connection.beginTransaction();
+
+    try {
+        await insertPerformanceMetrics(connection, metrics);
+        await connection.commit();
+        res.send('Performance metrics inserted successfully.');
+    } catch (error) {
+        console.error('Error inserting performance metrics:', error);
+        if (connection) {
+            await connection.rollback();
+        }
+        res.status(500).send('Error inserting performance metrics');
+    } finally {
+        connection.release();
+    }
+});
+
+router.put('/update-classification-accuracy-performance-metrics', async (req, res) => {
+    const metrics = req.body.metrics;
+
+    if (!metrics || !Array.isArray(metrics)) {
+        return res.status(400).send('Invalid metrics data');
+    }
+
+    const connection = await getConnection();
+    await connection.beginTransaction();
+
+    try {
+        await updatePerformanceMetrics(connection, metrics);
+        await connection.commit();
+        res.send('Performance metrics updated successfully.');
+    } catch (error) {
+        console.error('Error updating performance metrics:', error);
+        if (connection) {
+            await connection.rollback();
+        }
+        res.status(500).send('Error updating performance metrics');
+    } finally {
+        connection.release();
     }
 });
 

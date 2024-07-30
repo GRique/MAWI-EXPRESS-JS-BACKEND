@@ -7,7 +7,17 @@ const apiRoutes = require('./api-routes');
 const fs = require('fs');
 const path = require('path');
 
+const bodyParser = require('body-parser');
+
 const app = express();
+app.use(express.json({ limit: '100mb' }));
+
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+app.use(fileUpload({
+    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB
+}));
+
 app.use(cors());
 app.use(fileUpload());
 const port = 3000;
@@ -15,6 +25,8 @@ const port = 3000;
 app.use(express.json());
 
 app.use(express.static(path.join(__dirname, 'dist')));
+
+
 
 app.use('/api', apiRoutes);
 

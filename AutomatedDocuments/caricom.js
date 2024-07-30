@@ -128,7 +128,7 @@ function generateCaricomHTML(data) {
                 </tr>
                     
                     <tr>
-                        <th colspan="4">PORT OF DISCHARGE</th>
+                        <th colspan="4">PORT OF LOADING</th>
                         <th colspan="5">COUNTRY OF FINAL DESTINATION</th>
                         <th colspan="5">SHIP/ AIR/ ETC</th>
                         <th colspan="4">CURRENCY OF SALE</th>
