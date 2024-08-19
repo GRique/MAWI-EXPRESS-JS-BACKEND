@@ -19,7 +19,7 @@ app.use(fileUpload({
 }));
 
 app.use(cors());
-app.use(fileUpload());
+// app.use(fileUpload());
 const port = 3000;
 
 app.use(express.json());

@@ -91,8 +91,10 @@ async function getAllVessels(connection) {
         SELECT 
             id,
             name,
-            imo_number AS imoNumber
+            imo_number AS imoNumber,
+            active
         FROM vessel
+        WHERE active = 1
     `;
 
     try{

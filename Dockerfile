@@ -1,5 +1,5 @@
 # Use an official Node runtime as a parent image
-FROM node:20
+FROM node:18.5.0
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \

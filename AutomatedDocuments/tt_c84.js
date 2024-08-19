@@ -77,8 +77,8 @@ async function overlayText(page, data, pdfDoc) {
     page.drawText(`${verifyString(data.CPCCode)}`, { x: 50, y: 600, size: 10, font: font, color: fontColor });
     page.drawText(verifyString(data.extensionCode), { x: 50, y: 585, size: 10, font: font, color: fontColor });
   
-    page.drawText(verifyString(data.signatoryName), { x: 95, y: 505, size: 8, color: fontColor });
-    page.drawText(verifyString(data.signatoryStatus), { x: 95, y: 495, size: 8, color: fontColor });
+    // page.drawText(verifyString(data.signatoryName), { x: 95, y: 505, size: 8, color: fontColor });
+    // page.drawText(verifyString(data.signatoryStatus), { x: 95, y: 495, size: 8, color: fontColor });
 }
 
 

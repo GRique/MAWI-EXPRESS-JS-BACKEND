@@ -41,6 +41,7 @@ async function beginTransaction(connection) {
 }
 
 async function insertInvoice(connection, invoice, entryId) {
+    console.log("Inserting invoice. Entry Id: ", invoice)
     if(invoice.supplier_address == null) invoice.supplier_address = "N/A"
     if(invoice.purchase_order == null) invoice.purchase_order = "N/A"
     if(invoice.rate_of_exchange == null || invoice.rate_of_exchange == undefined) invoice.rate_of_exchange = 1
@@ -74,11 +75,30 @@ async function insertInvoiceLine(connection, line, invoiceId) {
     });
 }
 
-async function insertVehicleLine(connection, line, invoiceLineId){
-    console.log("Inserting vehicle line. Line Id: ", invoiceLineId)
+async function insertVehicleLine(connection, line, invoiceLineId) {
+    console.log("Inserting vehicle line. Line Id: ", invoiceLineId);
     const lineQuery = 'INSERT INTO vehicle (gross_weight, net_weight, curb_weight, fuel_type, seat_position, model_code, number_of_seats, number_of_doors, tyre_size, engine_displacement, chassis_number, engine_number, exterior_color, customer_name, customer_tin, broker_instructions, ed_number, manufacture_year, invoice_line_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+
+    // Construct the query string with values for debugging
+    const lineQueryWithValues = lineQuery.replace(/\?/g, (match, index) => {
+        const value = [
+            line.grossWeight, line.netWeight, line.curbWeight, line.fuelType, line.seatPosition, line.modelCode,
+            line.numberOfSeats, line.numberOfDoors, line.tyreSize, line.engineDisplacement, line.chassisNumber,
+            line.engineNumber, line.exteriorColor, line.customerName, line.tinNumber, line.brokerInstructions,
+            line.edNumber, line.manufactureYear, invoiceLineId
+        ][index];
+        return connection.escape(value);
+    });
+
+    console.log("Executing Query: ", lineQueryWithValues);
+
     await new Promise((resolve, reject) => {
-        connection.query(lineQuery, [line.grossWeight, line.netWeight, line.curbWeight, line.fuelType, line.seatPosition, line.modelCode, line.numberOfSeats, line.numberOfDoors, line.tyreSize, line.engineDisplacement, line.chassisNumber, line.engineNumber, line.exteriorColor, line.customerName, line.tinNumber, line.brokerInstructions, line.edNumber, line.manufactureYear, invoiceLineId], (err, results) => {
+        connection.query(lineQuery, [
+            line.grossWeight, line.netWeight, line.curbWeight, line.fuelType, line.seatPosition, line.modelCode,
+            line.numberOfSeats, line.numberOfDoors, line.tyreSize, line.engineDisplacement, line.chassisNumber,
+            line.engineNumber, line.exteriorColor, line.customerName, line.tinNumber, line.brokerInstructions,
+            line.edNumber, line.manufactureYear, invoiceLineId
+        ], (err, results) => {
             if (err) {
                 reject(err);
             } else {
@@ -89,15 +109,16 @@ async function insertVehicleLine(connection, line, invoiceLineId){
 }
 
 async function insertWaybill(connection, waybill, entryId) {
-    console.log(waybill)
+    console.log("Saving Waybill: ", waybill)
     const importer = waybill.importer === '' ? null : waybill.importer;
     const shipper = waybill.shipper === '' ? null : waybill.shipper;
     const vessel = waybill.vessel === '' ? null : waybill.vessel;
     const portOfDischarge = waybill.portOfDischarge === '' ? null : waybill.portOfDischarge;
     if(waybill.waybillDate === '') waybill.waybillDate = null
-    const invoiceQuery = 'INSERT INTO waybill (waybill_number, waybill_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge, entry_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+    if(waybill.estimatedArrivalDate === '') waybill.estimatedArrivalDate = null
+    const invoiceQuery = 'INSERT INTO waybill (waybill_number, waybill_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge, estimated_arrival_date, file_url, entry_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
     return new Promise((resolve, reject) => {
-        connection.query(invoiceQuery, [waybill.waybillNumber, waybill.waybillDate, waybill.modeOfTransport, waybill.freightType, waybill.marksAndNumbers, waybill.countryOfOrigin, waybill.countryOfFinalDestination, waybill.cpcCode, waybill.npcCode, waybill.kindOfPackage, waybill.numberOfPackages, importer, shipper, vessel, portOfDischarge, entryId], (err, results) => {
+        connection.query(invoiceQuery, [waybill.waybillNumber, waybill.waybillDate, waybill.modeOfTransport, waybill.freightType, waybill.marksAndNumbers, waybill.countryOfOrigin, waybill.countryOfFinalDestination, waybill.cpcCode, waybill.npcCode, waybill.kindOfPackage, waybill.numberOfPackages, importer, shipper, vessel, portOfDischarge, waybill.estimatedArrivalDate, waybill.waybillFiles, entryId], (err, results) => {
             if (err) {
                 reject(err);
             } else {
@@ -216,6 +237,9 @@ async function insertEntry(connection, entry) {
         freight_charge,
         insurance_amount,
         other_charges,
+        freight_currency,
+        insurance_currency,
+        other_charges_currency,
         rate_of_exchange,
         net_weight,
         gross_weight,
@@ -233,7 +257,7 @@ async function insertEntry(connection, entry) {
         classification_approved,
         classification_approved_by,
         entry_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     if(entry.declarant == '')
         entry.declarant = null
@@ -251,6 +275,9 @@ async function insertEntry(connection, entry) {
                 entry.freightCharge,
                 entry.insuranceAmount,
                 entry.otherCharges,
+                entry.freightCurrency,
+                entry.insuranceCurrency,
+                entry.otherChargesCurrency,
                 entry.rateOfExchange,
                 entry.netWeight,
                 entry.grossWeight, 
@@ -347,6 +374,7 @@ async function getEntriesWithDetails(connection, status) {
         LEFT JOIN buyer bu ON w.importer = bu.id
         WHERE ce.entry_status = ?
         GROUP BY ce.entry_id
+        ORDER BY STR_TO_DATE(ce.entry_date, '%Y-%c-%e') DESC
       `;
 
     return new Promise((resolve, reject) => {
@@ -613,18 +641,19 @@ async function updateWaybillDetails(connection, waybill, waybill_id) {
     console.log("saving waybill details")
     console.log(waybill)
     if(waybill.waybill_date === '') waybill.waybill_date = null
+    if(waybill.estimated_arrival_date === '') waybill.estimated_arrival_date = null
     console.log("Waybill Date", waybill.waybill_date)
 
-    const { waybill_number, waybill_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge} = waybill;
+    const { waybill_number, waybill_date, estimated_arrival_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge} = waybill;
     try {
         const query = `
           UPDATE waybill
-          SET waybill_number = ?, waybill_date = ?, mode_of_transport = ?, freight_type = ?, marks_and_numbers = ?, country_of_origin = ?, country_of_final_destination = ?, cpc_code = ?, npc_code = ?, package_type = ?, package_quantity = ?, importer = ?, shipper = ?, vessel = ?, port_of_discharge = ?
+          SET waybill_number = ?, waybill_date = ?, mode_of_transport = ?, freight_type = ?, marks_and_numbers = ?, country_of_origin = ?, country_of_final_destination = ?, cpc_code = ?, npc_code = ?, package_type = ?, package_quantity = ?, importer = ?, shipper = ?, vessel = ?, port_of_discharge = ?, estimated_arrival_date = ?
           WHERE waybill_id = ?
         `;
 
         return new Promise((resolve, reject) => {
-            connection.query(query, [waybill_number, waybill_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge, waybill_id], (err, results) => {
+            connection.query(query, [waybill_number, waybill_date, mode_of_transport, freight_type, marks_and_numbers, country_of_origin, country_of_final_destination, cpc_code, npc_code, package_type, package_quantity, importer, shipper, vessel, port_of_discharge, estimated_arrival_date, waybill_id], (err, results) => {
                 if (err) {
                 reject(err);
                 } else {
@@ -653,7 +682,7 @@ async function updateCustomsEntry(connection, entryData, entry_id) {
         const query = `
             UPDATE customs_entry
             SET mawi_invoice = ?, entry_date = ?, invoice_total = ?, supplier_name = ?,
-                gross_weight = ?, net_weight = ?, entry_number = ?, freight_charge = ?, insurance_amount = ?, other_charges = ?,
+                gross_weight = ?, net_weight = ?, entry_number = ?, freight_charge = ?, insurance_amount = ?, other_charges = ?, freight_currency = ?, insurance_currency = ?, other_charges_currency = ?,
                 rate_of_exchange = ?, consignee = ?, declarant = ?, incoterms = ?, regimeType = ?, deposit = ?, container_charges = ?, additional_charges = ?, local_fee = ?, country_last_provenance = ?, trading_country = ?, classification_status = ?, classification_approved = ?, classification_approved_by = ?, entry_status = ?, date_classified = ?
             WHERE entry_id = ?
             `;
@@ -668,6 +697,9 @@ async function updateCustomsEntry(connection, entryData, entry_id) {
                 entryData.freight_charge,
                 entryData.insurance_amount,
                 entryData.other_charges,
+                entryData.freight_currency,
+                entryData.insurance_currency,
+                entryData.other_charges_currency,
                 entryData.rate_of_exchange,
                 entryData.consignee,
                 entryData.declarant,
@@ -817,7 +849,6 @@ async function updateCommercialInvoiceLinesOptimized(connection, linesProvided) 
 
     const lines = linesProvided.filter(line => line.invoice_line_id != null && line.invoice_line_id != undefined && line.invoice_line_id != "");
 
-    console.log("Updating Multiple Commercial Invoice Lines: ", lines)
     if(lines.length == 0) return 0;
     
     try{
@@ -870,11 +901,6 @@ async function updateCommercialInvoiceLinesOptimized(connection, linesProvided) 
             WHERE invoice_line_id IN (${ids.join(', ')});
         `;
 
-        // Write query to file
-        // fs.writeFileSync(path.join(__dirname, 'line-query.sql'), query, (err) => {
-        //     if (err) throw err;
-        //     console.log('Query has been written to query.sql');
-        // });
     
         return new Promise((resolve, reject) => {
             connection.query(query, [], (err, results) => {
@@ -912,20 +938,23 @@ async function updateMultipleCommercialInvoices(connection, invoices) {
         const ids = [];
 
         invoices.forEach(invoice => {
-            ids.push(invoice.invoice_id);
-            updateCases.invoice_number.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_number)}`);
-            updateCases.invoice_date.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_date)}`);
-            updateCases.invoice_total.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_total)}`);
-            updateCases.sub_total.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.sub_total)}`);
-            updateCases.supplier_name.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.supplier_name)}`);
-            updateCases.taxed_amount.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.taxed_amount)}`);
-            updateCases.supplier_address.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.supplier_address)}`);
-            updateCases.purchase_order_number.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.purchase_order_number)}`);
-            updateCases.inland.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.inland)}`);
-            updateCases.insurance.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.insurance)}`);
-            updateCases.other_charges.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.other_charges)}`);
-            updateCases.currency.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.currency)}`);
-            updateCases.rate_of_exchange.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.rate_of_exchange)}`);
+            
+            if(invoice.invoice_id != null && invoice.invoice_id != undefined && invoice.invoice_id != ""){
+                ids.push(invoice.invoice_id);
+                updateCases.invoice_number.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_number)}`);
+                updateCases.invoice_date.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_date)}`);
+                updateCases.invoice_total.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.invoice_total)}`);
+                updateCases.sub_total.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.sub_total)}`);
+                updateCases.supplier_name.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.supplier_name)}`);
+                updateCases.taxed_amount.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.taxed_amount)}`);
+                updateCases.supplier_address.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.supplier_address)}`);
+                updateCases.purchase_order_number.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.purchase_order_number)}`);
+                updateCases.inland.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.inland)}`);
+                updateCases.insurance.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.insurance)}`);
+                updateCases.other_charges.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.other_charges)}`);
+                updateCases.currency.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.currency)}`);
+                updateCases.rate_of_exchange.push(`WHEN ${invoice.invoice_id} THEN ${escapeValue(invoice.rate_of_exchange)}`);
+            }
         });
 
         const query = `
@@ -948,10 +977,10 @@ async function updateMultipleCommercialInvoices(connection, invoices) {
         `;
 
         // Write query to file
-        // fs.writeFileSync(path.join(__dirname, 'invoice-query.sql'), query, (err) => {
-        //     if (err) throw err;
-        //     console.log('Query has been written to query.sql');
-        // });
+        fs.writeFileSync(path.join(__dirname, 'invoice-query.sql'), query, (err) => {
+            if (err) throw err;
+            console.log('Query has been written to query.sql');
+        });
 
         return new Promise((resolve, reject) => {
             connection.query(query, [], (err, results) => {
@@ -967,6 +996,100 @@ async function updateMultipleCommercialInvoices(connection, invoices) {
         throw error;
     }
 }
+
+async function updateVehicleDetails(connection, records) {
+    console.log("Updating Multiple Vehicle Records: ", records);
+
+    const filteredRecords = records.filter(record => record.id != null && record.id != undefined && record.id != "");
+
+    console.log("Filtered Vehicle Records: ", filteredRecords);
+    if(filteredRecords.length == 0) return 0;
+
+    try {
+        const updateCases = {
+            gross_weight: [],
+            net_weight: [],
+            curb_weight: [],
+            fuel_type: [],
+            seat_position: [],
+            model_code: [],
+            number_of_seats: [],
+            number_of_doors: [],
+            tyre_size: [],
+            engine_displacement: [],
+            chassis_number: [],
+            engine_number: [],
+            exterior_color: [],
+            customer_name: [],
+            customer_tin: [],
+            broker_instructions: [],
+            ed_number: [],
+            manufacture_year: []
+        };
+        const ids = [];
+
+        filteredRecords.forEach(record => {
+            if(record.id != null && record.id != undefined && record.id != "") {
+                ids.push(record.id);
+                updateCases.gross_weight.push(`WHEN ${record.id} THEN ${escapeValue(record.gross_weight)}`);
+                updateCases.net_weight.push(`WHEN ${record.id} THEN ${escapeValue(record.net_weight)}`);
+                updateCases.curb_weight.push(`WHEN ${record.id} THEN ${escapeValue(record.curb_weight)}`);
+                updateCases.fuel_type.push(`WHEN ${record.id} THEN ${escapeValue(record.fuel_type)}`);
+                updateCases.seat_position.push(`WHEN ${record.id} THEN ${escapeValue(record.seat_position)}`);
+                updateCases.model_code.push(`WHEN ${record.id} THEN ${escapeValue(record.model_code)}`);
+                updateCases.number_of_seats.push(`WHEN ${record.id} THEN ${escapeValue(record.number_of_seats)}`);
+                updateCases.number_of_doors.push(`WHEN ${record.id} THEN ${escapeValue(record.number_of_doors)}`);
+                updateCases.tyre_size.push(`WHEN ${record.id} THEN ${escapeValue(record.tyre_size)}`);
+                updateCases.engine_displacement.push(`WHEN ${record.id} THEN ${escapeValue(record.engine_displacement)}`);
+                updateCases.chassis_number.push(`WHEN ${record.id} THEN ${escapeValue(record.chassis_number)}`);
+                updateCases.engine_number.push(`WHEN ${record.id} THEN ${escapeValue(record.engine_number)}`);
+                updateCases.exterior_color.push(`WHEN ${record.id} THEN ${escapeValue(record.exterior_color)}`);
+                updateCases.customer_name.push(`WHEN ${record.id} THEN ${escapeValue(record.customer_name)}`);
+                updateCases.customer_tin.push(`WHEN ${record.id} THEN ${escapeValue(record.customer_tin)}`);
+                updateCases.broker_instructions.push(`WHEN ${record.id} THEN ${escapeValue(record.broker_instructions)}`);
+                updateCases.ed_number.push(`WHEN ${record.id} THEN ${escapeValue(record.ed_number)}`);
+                updateCases.manufacture_year.push(`WHEN ${record.id} THEN ${escapeValue(record.manufacture_year)}`);
+            }
+        });
+
+        const query = `
+            UPDATE vehicle
+            SET
+                gross_weight = CASE id ${updateCases.gross_weight.join(' ')} END,
+                net_weight = CASE id ${updateCases.net_weight.join(' ')} END,
+                curb_weight = CASE id ${updateCases.curb_weight.join(' ')} END,
+                fuel_type = CASE id ${updateCases.fuel_type.join(' ')} END,
+                seat_position = CASE id ${updateCases.seat_position.join(' ')} END,
+                model_code = CASE id ${updateCases.model_code.join(' ')} END,
+                number_of_seats = CASE id ${updateCases.number_of_seats.join(' ')} END,
+                number_of_doors = CASE id ${updateCases.number_of_doors.join(' ')} END,
+                tyre_size = CASE id ${updateCases.tyre_size.join(' ')} END,
+                engine_displacement = CASE id ${updateCases.engine_displacement.join(' ')} END,
+                chassis_number = CASE id ${updateCases.chassis_number.join(' ')} END,
+                engine_number = CASE id ${updateCases.engine_number.join(' ')} END,
+                exterior_color = CASE id ${updateCases.exterior_color.join(' ')} END,
+                customer_name = CASE id ${updateCases.customer_name.join(' ')} END,
+                customer_tin = CASE id ${updateCases.customer_tin.join(' ')} END,
+                broker_instructions = CASE id ${updateCases.broker_instructions.join(' ')} END,
+                ed_number = CASE id ${updateCases.ed_number.join(' ')} END,
+                manufacture_year = CASE id ${updateCases.manufacture_year.join(' ')} END
+            WHERE id IN (${ids.join(', ')});
+        `;
+
+        return new Promise((resolve, reject) => {
+            connection.query(query, [], (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results.affectedRows);
+                }
+            });
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
 
 async function updatePerformanceMetrics(connection, metrics) {
     try{
@@ -991,6 +1114,156 @@ async function updatePerformanceMetrics(connection, metrics) {
     }
 }
 
+const util = require('util');
+
+async function getTariffCodesBySupplierAndDescription(items, connection) {
+    try {
+        if (items.length === 0) {
+          return []; // Return empty if no items
+        }
+
+        // Building the WHERE clause dynamically
+        let whereClauses = [];
+        let queryParams = [];
+
+        items.forEach(item => {
+            if (item.product_code) {
+                whereClauses.push(`((ci.supplier_name = ? AND cil.product_code = ?) OR (ci.supplier_name = ? AND cil.description LIKE CONCAT('%', ?, '%')))`);
+                queryParams.push(item.supplier_name, item.product_code, item.supplier_name, item.description);
+            } else {
+                whereClauses.push(`(ci.supplier_name = ? AND cil.description LIKE CONCAT('%', ?, '%'))`);
+                queryParams.push(item.supplier_name, item.description);
+            }
+        });
+
+        const query = `
+            SELECT ci.supplier_name, cil.description, MIN(cil.tariff_code) AS tariff_code
+            FROM commercial_invoice ci
+            LEFT JOIN commercial_invoice_line cil ON ci.invoice_id = cil.invoice_id
+            LEFT JOIN customs_entry ce ON ci.entry_id = ce.entry_id
+            WHERE ce.entry_status = 'CLASSIFICATION_OKAY' AND (${whereClauses.join(' OR ')})
+            GROUP BY cil.description
+        `;
+
+        // Replace placeholders with actual values for logging
+        let loggedQuery = query;
+        queryParams.forEach(param => {
+            loggedQuery = loggedQuery.replace('?', util.inspect(param));
+        });
+
+        // Write the fully interpolated query to a file
+        // fs.writeFile(path.join(__dirname, 'full-query.sql'), loggedQuery, err => {
+        //     if (err) {
+        //         console.error('Error writing full query to file:', err);
+        //     } else {
+        //         console.log('Full query has been written to full-query.sql');
+        //     }
+        // });
+
+        return new Promise((resolve, reject) => {
+            connection.query(query, queryParams, (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
+async function getEntriesByIds(connection, entryIds) {
+    try {
+      const placeholders = entryIds.map(() => '?').join(','); // Create placeholders for the query
+      const query = `
+        SELECT 
+          ce.entry_id,
+          ce.entry_date,
+          ce.entry_number,
+          ce.consignee,
+          ce.entry_type,
+          w.waybill_number,
+          bu.name AS importerName,
+          w.importer,
+          w.shipper,
+          w.vessel,
+          w.port_of_discharge,
+          ci.invoice_number,
+          ci.supplier_name AS ciSupplierName,
+          ci.purchase_order_number
+        FROM customs_entry ce
+        LEFT JOIN waybill w ON ce.entry_id = w.entry_id
+        LEFT JOIN commercial_invoice ci ON ce.entry_id = ci.entry_id
+        LEFT JOIN buyer bu ON w.importer = bu.id
+        WHERE ce.entry_id IN (${placeholders})
+        GROUP BY ce.entry_id
+        ORDER BY STR_TO_DATE(ce.entry_date, '%Y-%c-%e') DESC
+      `;
+    //   const [results] = await connection.execute(query, entryIds);
+    //   return results;
+    return new Promise((resolve, reject) => {
+        connection.query(query, entryIds, (err, results) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(results);
+            }
+        });
+    });
+    } catch (error) {
+      console.error('Error fetching entries by IDs:', error);
+      throw error;
+    } finally {
+        await connection.release();
+      }
+  }
+
+  async function getClassificationDataByInvoiceLineIds(connection, invoiceLineIds) {
+    try {
+        const placeholders = invoiceLineIds.map(() => '?').join(',');
+        const query = `
+            SELECT 
+                acc.llm_recommended_classification_code,
+                acc.approved_classification_code,
+                cil.description,
+                ci.supplier_name,
+                ci.file_url,
+                ce.entry_number,
+                ce.entry_id
+            FROM 
+                classification_accuracy_performance_metric acc
+            INNER JOIN 
+                commercial_invoice_line cil ON acc.invoice_line_id = cil.invoice_line_id
+            LEFT JOIN 
+                commercial_invoice ci ON cil.invoice_id = ci.invoice_id
+            LEFT JOIN 
+                customs_entry ce ON ci.entry_id = ce.entry_id
+            WHERE 
+                acc.invoice_line_id IN (${placeholders})
+        `;
+
+        return new Promise((resolve, reject) => {
+            connection.query(query, invoiceLineIds, (err, results) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(results);
+                }
+            });
+        });
+    } catch (error) {
+        throw error;
+    } finally {
+        await connection.release();
+    }
+}
 
 
-module.exports = { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists, getEntriesWithDetailsNotFullyStored, insertInvoiceLine, updateCommercialInvoiceLinesOptimized, updateMultipleCommercialInvoices, insertInvoiceLinesWithPerformanceMetrics, updatePerformanceMetrics };
+module.exports = { getConnection, beginTransaction, insertInvoice, insertVehicleInvoiceLines, insertInvoiceLines, commitTransaction, insertEntry, insertWaybill, 
+    getEntriesWithDetails, getCommercialInvoicesByEntryId, getCommercialInvoicesWithVehiclesByEntryId, getCommercialInvoicesWithLinesByEntryId, getEntryAndWaybillByEntryId, 
+    updateWaybillDetails, updateCustomsEntry, updateCommercialInvoice, updateCommercialInvoiceLine, deleteInvoiceLines, checkEntryNumberExists, getEntriesWithDetailsNotFullyStored, 
+    insertInvoiceLine, updateCommercialInvoiceLinesOptimized, updateMultipleCommercialInvoices, insertInvoiceLinesWithPerformanceMetrics, updatePerformanceMetrics, 
+    getTariffCodesBySupplierAndDescription, updateVehicleDetails, getEntriesByIds, getClassificationDataByInvoiceLineIds };

@@ -1,0 +1,10 @@
+
+        UPDATE vessel
+        SET name = 'Gerard Vessel ', imo_number = '0000111223344'
+        WHERE id = '220'
+    
+
+        UPDATE vessel
+        SET name = 'Gerard Vessel 2233445', imo_number = '0000111223344'
+        WHERE id = '220'
+    

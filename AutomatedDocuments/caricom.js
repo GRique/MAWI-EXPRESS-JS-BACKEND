@@ -234,6 +234,7 @@ function generateCaricomHTML(data) {
         </body>
     </html>
     `
+    console.log("HTML generated. Returning...");
 
     return htmlTemplateUpdated;
 }
